@@ -1,88 +1,168 @@
-# agentmesh
+# AgentMesh: Multi-Agent System
 
-A small team of AI agents that work together on a goal, and **check each other's work** before anything is accepted.
+A Python project that coordinates AI agents to complete writing and small coding tasks. It plans the work, checks the results, and sends failed checks back as feedback so the agents can try again.
 
-You give it a goal like *"Build a slugify() function with tests and a usage note"*. A planner splits it into tasks, a researcher, coder and writer do them, and every piece of work has to pass automatic checks and an independent AI reviewer. If a check fails, the agent gets told exactly what's wrong and tries again.
+The agents share a task board, a validator, and a document library through **MCP (Model Context Protocol)**. You can run the project from the terminal or follow its progress in a web dashboard.
 
-The agents share their tools through **MCP (Model Context Protocol)** servers built for this project: a shared task board, a checker that runs tests, and a document library.
+**Built with:** Python, FastAPI, the MCP SDK, and a plain HTML/CSS/JavaScript dashboard.
 
-![Dashboard](docs/dashboard.png)
+![AgentMesh dashboard showing task progress and verification results](docs/dashboard.png)
 
-## Running it
+## What it does
 
-```bash
-pip install -r requirements.txt
+- Splits a goal into tasks and runs independent tasks together.
+- Checks work using word counts, JSON validation, citation checks, Python safety checks, pytest, and AI review, depending on the task.
+- Retries failed work with specific feedback, up to three attempts by default.
+- Supports Groq, Claude, and a scripted offline demo that needs no API key.
+- Shows task status, check results, model waits, and errors in the dashboard.
+- Runs scheduled jobs defined in YAML, such as a document audit and a failed-task report.
 
-python main.py demo          # run the example goal and watch it in the terminal
-python main.py serve         # dashboard at http://127.0.0.1:8000
-python main.py routines      # list the scheduled jobs
-python main.py routine knowledge-audit
-pytest                       # run the tests with offline agents
-```
+| Example goal | Expected workflow |
+|---|---|
+| "Write a paragraph about renewable energy." | One writer with length and quality checks; citations are optional. |
+| "Summarize our URL style guide with sources." | Read relevant local documents and check citations. |
+| "Build a slugify() utility that follows our URL style guide, with tests and a usage note." | Research, code, tests, and documentation, with dependencies between tasks. |
 
-By default, `GROQ_API_KEY` selects Groq, then `ANTHROPIC_API_KEY` selects Claude. With neither key, it uses an **offline demo team** (scripted agents in `core/fake_team.py`) that makes three mistakes on purpose so you can see the checks catch them. Set `DEMO_DELAY=0.4` to slow the offline dashboard down enough to watch.
+## Quick start: no API key needed
 
-### Using your Groq key on Windows
+Use **Python 3.12** for the tested setup. You also need Git to clone the repository. Node.js is optional and is used only for the dashboard tests.
 
-Run these commands in PowerShell from the project folder. The key prompt hides your input and keeps the key out of command history.
+### Windows PowerShell
 
 ```powershell
+git clone https://github.com/Sanskar3584/MultiAgent-System.git
+cd MultiAgent-System
+
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 
-$env:AGENTMESH_PROVIDER = "groq"
-$env:GROQ_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Groq API key' -AsSecureString)).Password
-
+$env:AGENTMESH_PROVIDER = "offline"
 .\.venv\Scripts\python.exe main.py demo
+```
+
+The demo deliberately produces a bad plan, a failing code test, and an overly long note. You should see each failure followed by a corrected attempt, ending with `Status: succeeded`.
+
+To open the dashboard:
+
+```powershell
 .\.venv\Scripts\python.exe main.py serve
 ```
 
-The dashboard is available at `http://127.0.0.1:8000`. These environment settings apply to this PowerShell session and its child processes. The Groq default model is `openai/gpt-oss-120b`; set `AGENTMESH_MODEL` to use another supported model.
+Visit [http://127.0.0.1:8000](http://127.0.0.1:8000). Press **Ctrl+C** in the terminal to stop the server.
 
-`AGENTMESH_PROVIDER` accepts `auto` (the default), `groq`, `anthropic`, or `offline`. To reproduce the scripted demo even when keys are set, use `$env:AGENTMESH_PROVIDER = "offline"` before running it. Switch back to `groq` for real model responses.
+<details>
+<summary>macOS / Linux commands</summary>
 
-Groq's [Free plan has usage limits](https://console.groq.com/docs/rate-limits); a full agent run makes several requests and may hit those limits. Keep your Groq account on the [Free plan](https://console.groq.com/docs/billing-faqs) for free API usage. Agentmesh does not change or verify your account's billing tier.
+```bash
+git clone https://github.com/Sanskar3584/MultiAgent-System.git
+cd MultiAgent-System
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+export AGENTMESH_PROVIDER=offline
+.venv/bin/python main.py demo
+.venv/bin/python main.py serve
+```
+
+</details>
+
+Offline mode uses scripted responses, including a renewable-energy paragraph. Use a live provider to generate responses tailored to other topics.
+
+## Use your Groq API key
+
+After completing setup, stop the server if it is running. In the same PowerShell window, run:
+
+```powershell
+$env:AGENTMESH_PROVIDER = "groq"
+$env:GROQ_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'Groq API key' -AsSecureString)).Password
+
+.\.venv\Scripts\python.exe main.py run "Write a paragraph about renewable energy."
+.\.venv\Scripts\python.exe main.py serve
+```
+
+The key prompt hides your input and keeps the key out of command history. Environment variables apply to this terminal session and its child processes. The app reads them from the environment; it does **not** load `.env` files automatically.
+
+The project's default Groq model is `openai/gpt-oss-120b`. Set `AGENTMESH_MODEL` to override it with a model available to your provider.
+
+Groq has a [Free plan with rate limits](https://console.groq.com/docs/rate-limits), while its [Developer plan uses paid billing](https://console.groq.com/docs/billing-faqs). A team run makes several API requests. AgentMesh does not change or verify your account's billing plan.
+
+### Provider settings
+
+| `AGENTMESH_PROVIDER` | Behavior |
+|---|---|
+| `auto` (default) | Uses Groq if `GROQ_API_KEY` is set, otherwise Claude if `ANTHROPIC_API_KEY` is set, otherwise the offline team. |
+| `groq` | Requires `GROQ_API_KEY`. |
+| `anthropic` | Requires `ANTHROPIC_API_KEY`. |
+| `offline` | Uses scripted agents even when API keys are set. |
+
+Other optional environment variables:
+
+| Variable | Purpose |
+|---|---|
+| `AGENTMESH_MODEL` | Override the selected provider's model. |
+| `DEMO_DELAY` | Pause between offline responses; try `0.4` seconds to watch the dashboard update. |
+| `KNOWLEDGE_DIR` | Use another folder of Markdown documents instead of `knowledge/`. |
+| `BLACKBOARD_FILE` | Save and reload the shared task board as JSON. This does not persist dashboard run history. |
 
 ## How it works
 
-General writing requests, such as **"Write a paragraph about renewable energy"**, use one writer
-with word-length checks and an independent quality review. They do not require citations or a
-research task. The final answer preserves the requested format, including a single paragraph.
-
-Requests such as **"Summarize our style guide"** or **"Write a brief with sources"** still require
-citations. Research uses the local `knowledge/` library; there is no web search. Required evidence
-must come from relevant documents, and missing sources should be reported instead of replaced
-with unrelated references. The offline team includes a scripted renewable-energy paragraph;
-use a live provider for writing tailored to other topics.
-
-The diagram below shows the multi-task workflow used by the slugify demo:
-
-```
- goal
-  │
-  ▼
- planner ──► plan checked (valid JSON? dependencies make sense?)
-  │
-  ▼
- tasks posted to the blackboard ─────────────────────────────┐
-  │                                                          │
-  ▼   wave 1: research    wave 2: code      wave 3: docs     │  agents read each
- each task:  agent works ─► checks ─► fail? feedback ─► retry│  other's results
-             (max 3 tries)          pass? save result ───────┘  from the blackboard
-  │
-  ▼
- combiner ──► final checks ──► final answer
+```mermaid
+flowchart TD
+    Goal --> Plan["Plan and validate tasks"]
+    Plan --> Board["Post tasks to the shared board"]
+    Board --> Work["Run tasks whose dependencies are ready"]
+    Work --> Checks["Run the task's checks"]
+    Checks -->|Failed| Retry["Send feedback, up to 3 attempts"]
+    Retry --> Work
+    Checks -->|Passed| Saved["Save the task result"]
+    Saved --> Final["Combine finished work and check the final answer"]
 ```
 
-| Folder | What's in it |
+Tasks run in groups called *waves*: every task in a wave can start because its dependencies are in earlier waves. If a task keeps failing, dependent tasks are skipped and independent tasks can still finish. The final run status is `succeeded`, `partial`, or `failed`; the dashboard also reports unexpected errors.
+
+Citations are required when the user asks for sources or the work depends on supplied documents. General writing uses length and quality checks without an unnecessary research task. Final formatting preserves the requested structure, such as a single paragraph.
+
+## Useful commands
+
+Run these from the project folder. On macOS/Linux, replace `.\.venv\Scripts\python.exe` with `.venv/bin/python`.
+
+```powershell
+.\.venv\Scripts\python.exe main.py run "Summarize our URL style guide with sources."
+.\.venv\Scripts\python.exe main.py routines
+.\.venv\Scripts\python.exe main.py routine knowledge-audit
+.\.venv\Scripts\python.exe main.py serve 8001
+```
+
+The last command uses port **8001** if port 8000 is already occupied. Commands use the provider selected in your terminal.
+
+The included routines are [knowledge-audit](routines/knowledge-audit.yaml), [failed-task-digest](routines/failed-task-digest.yaml), and [weekly-self-test](routines/weekly-self-test.yaml). Their schedules run while `main.py serve` is running; you can also trigger them manually from the dashboard or terminal.
+
+## Tests
+
+```powershell
+$env:AGENTMESH_PROVIDER = "offline"
+.\.venv\Scripts\python.exe -m pytest -q
+node tests/test_dashboard.js
+```
+
+The Python tests cover validators, provider adapters, task dependencies, writing policies, routines, and the web API. They use offline agents or mocked API replies, including end-to-end runs with real local MCP servers. The Node command checks dashboard behavior using built-in Node modules; no `npm install` is needed.
+
+## Project structure
+
+| Path | Purpose |
 |---|---|
-| `servers/` | The 3 MCP servers: `blackboard_server.py` (shared tasks, messages, results), `validator_server.py` (runs tests, checks code safety, citations, length, JSON), `knowledge_server.py` (document search) |
-| `core/` | `tool_hub.py` connects to the servers · `agent.py` the agent loop · `roles.py` what each agent does · `checks.py` the verification loop · `orchestrator.py` runs a whole goal · `routines.py` scheduled jobs · `llm.py` Groq, Claude or the fake team · `events.py` the event log |
-| `web/` | `api.py` the web server · `dashboard.html` the live dashboard |
-| `routines/` | Scheduled jobs written in YAML |
-| `knowledge/` | The documents the researcher can search |
-| `tests/` | Tests for the servers, the logic, and the whole thing end to end |
+| `main.py` | Terminal commands and server entry point. |
+| `core/` | Planning, agent loops, checks, provider adapters, scheduling, and events. |
+| `servers/` | Three MCP servers: shared task board, validators, and document search. |
+| `web/` | FastAPI endpoints and the dashboard. |
+| `routines/` | Scheduled jobs written in YAML. |
+| `knowledge/` | Markdown documents available to the agents. |
+| `tests/` | Python and dashboard regression tests. |
 
-**Explaining the project:** start with `main.py`, then `run_goal()` in `core/orchestrator.py`,
-then `verify_loop()` in `core/checks.py`. [EXPLAIN.md](EXPLAIN.md) walks through a simple
-writing request, the task dictionaries, the Python concepts used here, and a short demo.
+## Current limits
+
+- Research searches local Markdown documents; there is no web search. Add relevant `.md` files to `knowledge/` and restart the app to use them.
+- Citation validation checks that document IDs exist. The AI reviewer checks relevance, but this does not guarantee factual accuracy.
+- Generated Python tests run locally with import checks and a timeout. This is a demo safeguard, not a complete security sandbox.
+- Run history is kept in memory. Optional `BLACKBOARD_FILE` persistence saves the shared board, not the dashboard's runs and event history.
+
+**Explaining the code:** start with `main.py`, then `run_goal()` in `core/orchestrator.py`, then `verify_loop()` in `core/checks.py`. [EXPLAIN.md](EXPLAIN.md) includes a walkthrough, Python concepts, a short demo script, and likely questions.
