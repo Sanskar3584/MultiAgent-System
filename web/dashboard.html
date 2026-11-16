@@ -1,0 +1,678 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentmesh</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Crect width=%2232%22 height=%2232%22 rx=%226%22 fill=%22%2315302B%22/%3E%3Cpath d=%22M9 17l5 5 9-11%22 stroke=%22%23E3F1E9%22 stroke-width=%223.5%22 fill=%22none%22 stroke-linecap=%22round%22/%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap" rel="stylesheet">
+<style>
+  /* colours: pale green-grey paper, dark green ink, and green/red for pass/fail */
+  :root {
+    --paper: #EDF1EE; --card: #FFFFFF; --ink: #15302B; --muted: #5B6E68; --line: #CBD5D0; --soft: #E2E8E4;
+    --pass: #1E7A52; --pass-bg: #E3F1E9; --fail: #B23A2C; --fail-bg: #F7E5E1; --busy: #A8701A; --busy-bg: #F6EBD6;
+    --heading: "Bricolage Grotesque", "Segoe UI", sans-serif;
+    --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 var(--body); }
+  h1, h2, h3 { font-family: var(--heading); margin: 0; }
+  h2 { font-size: 1.05rem; }
+  button, textarea, select { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid #2D5B86; outline-offset: 2px; }
+  .muted { color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 0.9rem; min-width: 0; }
+
+  header { display: flex; gap: 1.5rem; align-items: baseline; flex-wrap: wrap; padding: 1rem 1.5rem 0.75rem; }
+  header h1 { font-size: 1.6rem; }
+  header h1 span { font-weight: 500; color: var(--muted); }
+  #facts { color: var(--muted); font-size: 0.9rem; }
+  #facts b { color: var(--ink); }
+
+  form { display: grid; grid-template-columns: 1fr auto; gap: 0.75rem; margin: 0 1.5rem 1rem; }
+  form label { grid-column: 1 / -1; font-weight: 700; }
+  textarea { padding: 0.6rem; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); resize: vertical; }
+  .button { border: 0; border-radius: 5px; padding: 0.6rem 1.1rem; font-weight: 700; background: var(--ink); color: white; cursor: pointer; }
+  .button.light { background: none; color: var(--ink); border: 1px solid var(--line); font-weight: 400; padding: 0.3rem 0.8rem; white-space: nowrap; }
+  .link { background: none; border: 0; padding: 0; color: #2D5B86; text-decoration: underline; cursor: pointer; }
+
+  main { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 1rem; padding: 0 1.5rem 2rem; align-items: start; }
+  #run-list { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+  #run-list button { width: 100%; text-align: left; background: none; border: 0; border-radius: 5px; padding: 0.5rem; cursor: pointer; }
+  #run-list button:hover, #run-list button.selected { background: var(--soft); }
+  .goal-text { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9rem; }
+  .right { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0; }
+  #run-view { min-width: 0; }
+
+  .badge { font-size: 0.8rem; font-weight: 700; border-radius: 99px; padding: 0.1rem 0.55rem; background: var(--soft); }
+  .badge.succeeded, .badge.done { background: var(--pass-bg); color: var(--pass); }
+  .badge.failed, .badge.error { background: var(--fail-bg); color: var(--fail); }
+  .badge.running, .badge.planning, .badge.working, .badge.partial { background: var(--busy-bg); color: var(--busy); }
+
+  /* the plan: one column per "wave" of tasks */
+  #pipeline { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(230px, 1fr); gap: 1.25rem; overflow-x: auto; }
+  .column { display: grid; gap: 0.75rem; align-content: start; }
+  .task { display: grid; gap: 0.5rem; }
+  .task.done { border-color: #9FC8B2; }
+  .task.running { border-color: var(--busy); }
+  .task.failed { border-color: var(--fail); }
+  .task-top { display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline; }
+  .task h3 { font-size: 1rem; }
+  .small { font-size: 0.82rem; color: var(--muted); }
+
+  /* each attempt is a row of check "stamps" */
+  .attempt { display: grid; grid-template-columns: 4.2rem 1fr; gap: 0.5rem; }
+  .stamps { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+  .stamp { font-family: var(--heading); font-weight: 700; font-size: 0.8rem; padding: 0.1rem 0.5rem; border: 1.5px solid currentColor; border-radius: 5px; }
+  .stamp.pass { color: var(--pass); background: var(--pass-bg); }
+  .stamp.fail { color: var(--fail); background: var(--fail-bg); transform: rotate(-2deg); }
+  .stamp.wait { color: var(--muted); border-style: dashed; }
+  .problem { grid-column: 2; font-size: 0.82rem; color: var(--fail); background: var(--fail-bg); border-radius: 5px; padding: 0.3rem 0.5rem; overflow-wrap: anywhere; }
+  .notice { padding: 0.7rem 0.9rem; margin-bottom: 0.75rem; border-radius: 5px; overflow-wrap: anywhere; }
+  .notice.failure { color: var(--fail); background: var(--fail-bg); }
+  .notice.connection { color: var(--busy); background: var(--busy-bg); }
+
+  .two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 1rem; }
+  #feed { list-style: none; margin: 0.6rem 0 0; padding: 0; max-height: 440px; overflow-y: auto; font-size: 0.86rem; }
+  #feed li { display: grid; grid-template-columns: 8rem 1fr; gap: 0.6rem; padding: 0.3rem 0; border-bottom: 1px solid var(--soft); overflow-wrap: anywhere; }
+  .ok { color: var(--pass); font-weight: 700; } .bad { color: var(--fail); font-weight: 700; } .tool { color: #2D5B86; font-weight: 700; }
+  #result { max-height: 440px; overflow-y: auto; }
+  #result pre { background: var(--ink); color: #E6EFEA; padding: 0.75rem; border-radius: 5px; overflow-x: auto; font-size: 0.8rem; }
+  #result p, #result ul { max-width: 72ch; }
+
+  .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--line); margin-bottom: 0.75rem; }
+  .tabs button { background: none; border: 0; border-bottom: 3px solid transparent; padding: 0.45rem 0.8rem; font-weight: 700; color: var(--muted); cursor: pointer; }
+  .tabs button.on { color: var(--ink); border-bottom-color: var(--ink); }
+  .tab-body { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+  th, td { text-align: left; padding: 0.45rem; border-bottom: 1px solid var(--soft); vertical-align: top; }
+  th { color: var(--muted); }
+  .message { padding: 0.5rem 0; border-bottom: 1px solid var(--soft); }
+  .message pre { white-space: pre-wrap; font: inherit; margin: 0.25rem 0 0; }
+
+  @media (max-width: 900px) {
+    main, .two { grid-template-columns: minmax(0, 1fr); }
+    #pipeline { grid-auto-flow: row; grid-auto-columns: auto; }
+  }
+  @media (max-width: 560px) {
+    header, form, main { padding-left: 0.75rem; padding-right: 0.75rem; margin-left: 0; margin-right: 0; }
+    form { grid-template-columns: 1fr; margin: 0 0.75rem 1rem; }
+    #feed li { grid-template-columns: 1fr; gap: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>agentmesh <span>control room</span></h1>
+  <div id="facts">Connecting…</div>
+</header>
+
+<form id="goal-form" class="card">
+  <label for="goal">What should the team build?</label>
+  <textarea id="goal" rows="2" placeholder="Describe the goal in a sentence or two"></textarea>
+  <button class="button" id="start">Start run</button>
+  <div class="muted" style="grid-column: 1 / -1; font-size: 0.88rem">
+    Every task is checked by tests, validators and an independent reviewer before it's accepted.
+    <button type="button" class="link" id="example">Use the slugify example</button>
+  </div>
+</form>
+
+<main>
+  <aside class="card">
+    <h2>Runs</h2>
+    <ul id="run-list"></ul>
+    <p class="muted" id="no-runs" style="font-size: 0.88rem">No runs yet.</p>
+  </aside>
+
+  <div class="right">
+    <section id="empty" class="card" style="text-align: center; padding: 2.5rem 1rem">
+      <h2>Start a run to watch the team work</h2>
+      <p class="muted">You'll see the plan, every check each task goes through, the feedback when a check fails, and the fix on the next attempt.</p>
+    </section>
+
+    <section id="run-view" hidden>
+      <div style="display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; margin-bottom: 0.75rem">
+        <h2 id="run-goal" style="font-size: 1.3rem"></h2>
+        <span id="run-status" class="badge"></span>
+        <span id="run-counts" class="muted"></span>
+      </div>
+      <div id="run-error" class="notice failure" role="alert" hidden></div>
+      <div id="run-connection" class="notice connection" role="status" hidden></div>
+      <div id="pipeline"></div>
+      <div class="two" style="margin-top: 1rem">
+        <section class="card">
+          <h2>Activity</h2>
+          <ul id="feed"></ul>
+        </section>
+        <section class="card">
+          <h2>Result</h2>
+          <div id="result"><p class="muted">Appears here once every task has passed its checks.</p></div>
+        </section>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="tabs">
+        <button class="on" data-tab="routines">Routines</button>
+        <button data-tab="channels">Channels</button>
+        <button data-tab="tools">MCP tools</button>
+      </div>
+      <div class="tab-body" id="tab-routines"></div>
+      <div class="tab-body" id="tab-channels" hidden>
+        <select id="channel"><option>reports</option><option>escalations</option><option>humans</option></select>
+        <div id="messages"></div>
+      </div>
+      <div class="tab-body" id="tab-tools" hidden></div>
+    </section>
+  </div>
+</main>
+
+<script>
+// ---------------------------------------------------------------- helpers
+const $ = (id) => document.getElementById(id);
+
+// Escape user and model text before putting it into HTML.
+function escape(text) {
+  const replacements = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  };
+  return String(text ?? "").replace(/[&<>"']/g, (character) => replacements[character]);
+}
+
+async function api(path, options) {
+  const response = await fetch(path, {
+    headers: { "content-type": "application/json" },
+    signal: AbortSignal.timeout(10000),
+    ...options,
+  });
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+  return response.json();
+}
+
+// ---------------------------------------------------------------- the run being watched
+// We poll /api/runs/<id>/events every 0.7s and rebuild this "view" object from the events.
+let currentRun = null;
+let seen = 0;          // how many events we've already processed
+let view = null;
+let timer = null;
+let generation = 0;  // Each opened view gets a number, even when reopening the same run.
+let pollingGeneration = null;  // Prevent two polls for the same view from overlapping.
+const terminalStatuses = ["succeeded", "partial", "failed", "error"];
+
+function emptyView() {
+  return {
+    goal: "",
+    status: "planning",
+    plan: [],
+    taskStatus: {},
+    taskErrors: {},
+    checks: {},
+    modelStatus: {},
+    feed: [],
+    result: "",
+    finalPassed: null,
+    error: "",
+    connectionError: "",
+    llmCalls: 0,
+    toolCalls: 0,
+  };
+}
+
+// "coder:impl" -> "impl", "planner" -> "planner"
+function taskOf(who) {
+  if (who === "planner" || who === "combiner") return who;
+  const [role, task] = who.split(":");
+  if (role === "reviewer") {
+    if (task === "plan") return "planner";
+    if (task === "final") return "combiner";
+    return task;
+  }
+  return task || null;
+}
+
+function setRunStatus(status, reason = "") {
+  view.status = status === "error" ? "failed" : status;
+  if (reason) view.error = reason;
+  if (terminalStatuses.includes(status)) view.modelStatus = {};
+  if (["failed", "error"].includes(status)) {
+    for (const task of view.plan) {
+      const current = view.taskStatus[task.id];
+      if (current === "running") {
+        view.taskStatus[task.id] = "failed";
+      } else if (!["done", "failed", "skipped"].includes(current)) {
+        view.taskStatus[task.id] = "skipped";
+      }
+    }
+    if (!view.error) {
+      const failed = view.plan.find((task) => view.taskStatus[task.id] === "failed" && view.taskErrors[task.id]);
+      if (failed) view.error = `${failed.title}: ${view.taskErrors[failed.id]}`;
+    }
+  }
+}
+
+function reconcileRun(run) {
+  // A final report can fill gaps if we missed any events while disconnected.
+  if (run.goal) view.goal = run.goal;
+  if (!terminalStatuses.includes(run.status)) return;
+  const report = run.report;
+  if (report) {
+    if (report.plan) view.plan = report.plan;
+    for (const [id, task] of Object.entries(report.tasks || {})) {
+      view.taskStatus[id] = task.status;
+      if (task.error) {
+        view.taskErrors[id] = task.error;
+      } else if (task.status === "done") {
+        delete view.taskErrors[id];
+      }
+      if (task.attempts?.length) {
+        view.checks[id] = {};
+        for (const attempt of task.attempts) {
+          view.checks[id][attempt.attempt] = attempt.results;
+        }
+      }
+    }
+    view.result = report.final_output || "";
+    // A failed plan never reached the combiner.
+    const hasFinishedTask = Object.values(report.tasks || {}).some((task) => task.status === "done");
+    if (report.final_output || hasFinishedTask) {
+      view.finalPassed = report.final_passed;
+    }
+  }
+  setRunStatus(run.status, run.error || report?.error || "");
+}
+
+function handle(event) {
+  if (event.kind === "run_status") {
+    if (event.goal) view.goal = event.goal;
+    if (event.plan) view.plan = event.plan;
+    setRunStatus(event.status, event.reason || "");
+  } else if (event.kind === "task_status") {
+    const finished = ["done", "failed", "skipped"].includes(view.taskStatus[event.task]);
+    // Older events must not move a finished task back to "running".
+    if (!finished) view.taskStatus[event.task] = event.status;
+    if (event.reason) view.taskErrors[event.task] = event.reason;
+  } else if (event.kind === "check") {
+    const task = taskOf(event.who);
+    if (task) {
+      if (!view.checks[task]) view.checks[task] = {};
+      if (!view.checks[task][event.attempt]) view.checks[task][event.attempt] = [];
+      view.checks[task][event.attempt].push(event);
+    }
+  } else if (event.kind === "tool_call") {
+    view.toolCalls++;
+  } else if (event.kind === "model_status") {
+    const task = taskOf(event.who);
+    if (task) {
+      if (event.status === "waiting") {
+        view.modelStatus[task] = event;
+      } else {
+        delete view.modelStatus[task];
+      }
+    }
+  } else if (event.kind === "final") {
+    view.result = event.output;
+    view.finalPassed = event.passed;
+  }
+  const visibleEvents = ["tool_call", "check", "task_status", "run_status", "model_status"];
+  if (visibleEvents.includes(event.kind)) view.feed.push(event);
+}
+
+async function poll() {
+  if (!currentRun || pollingGeneration === generation) return;
+  const runId = currentRun;
+  const thisGeneration = generation;
+  pollingGeneration = thisGeneration;
+  try {
+    const [eventResponse, runResponse] = await Promise.allSettled([
+      api(`/api/runs/${runId}/events?after=${seen}`),
+      api(`/api/runs/${runId}`),
+    ]);
+    // Ignore responses from a view the user has since left.
+    if (thisGeneration !== generation || runId !== currentRun) return;
+    view.connectionError = "";
+    if (eventResponse.status === "fulfilled") {
+      const data = eventResponse.value;
+      data.events.forEach(handle);
+      seen = data.total;
+    } else {
+      view.connectionError = "Could not refresh activity. Retrying the connection…";
+    }
+    if (runResponse.status === "fulfilled") {
+      reconcileRun(runResponse.value);
+    } else if (eventResponse.status !== "fulfilled") {
+      view.connectionError = "Cannot reach this run. Check that the server is still running. Retrying…";
+    }
+    draw();
+    if (terminalStatuses.includes(view.status)) clearInterval(timer);
+  } finally {
+    if (pollingGeneration === thisGeneration) pollingGeneration = null;
+  }
+}
+
+function openRun(runId) {
+  generation++;
+  currentRun = runId;
+  seen = 0;
+  view = emptyView();
+  $("result").innerHTML = '<p class="muted">Appears here once every task has passed its checks.</p>';
+  location.hash = runId;
+  clearInterval(timer);
+  timer = setInterval(poll, 700);
+  poll();
+  loadRuns();
+}
+
+// ---------------------------------------------------------------- drawing
+function attemptRows(task) {
+  const attempts = view.checks[task];
+  if (!attempts) {
+    return '<div class="attempt"><span class="small">Checks</span><div class="stamps"><span class="stamp wait">waiting</span></div></div>';
+  }
+
+  const rows = [];
+  for (const number of Object.keys(attempts)) {
+    const checks = attempts[number];
+    let stamps = "";
+    for (const check of checks) {
+      const status = check.passed ? "pass" : "fail";
+      const symbol = check.passed ? "✓" : "✗";
+      stamps += `<span class="stamp ${status}">${escape(check.check)} ${symbol}</span>`;
+    }
+    const failed = checks.find((check) => !check.passed && check.problems.length);
+    rows.push(`<div class="attempt"><span class="small">Attempt ${number}</span><div class="stamps">${stamps}</div>
+      ${failed ? `<div class="problem">${escape(failed.problems[0])}</div>` : ""}</div>`);
+  }
+  return rows.join("");
+}
+
+function modelActivity(taskId) {
+  const waiting = view.modelStatus[taskId];
+  if (!waiting) return "";
+
+  let message = "Waiting for model response";
+  if (waiting.who.startsWith("reviewer:")) message = "Waiting for reviewer";
+  if (waiting.time) {
+    const elapsed = Math.max(0, Math.floor(Date.now() / 1000 - waiting.time));
+    if (elapsed) message += ` (${elapsed}s)`;
+  }
+  if (waiting.detail) message += `: ${waiting.detail}`;
+  return message;
+}
+
+function taskCard(id, title, role, status, note = "") {
+  const activity = modelActivity(id);
+  return `<article class="card task ${status}">
+    <div class="task-top"><h3>${escape(title)}</h3><span class="badge ${status}">${status}</span></div>
+    <div class="small">${escape(role)}${escape(note)}</div>
+    ${activity ? `<div class="small" role="status">${escape(activity)}</div>` : ""}
+    ${view.taskErrors[id] ? `<div class="notice failure" style="margin: 0" role="alert">${escape(view.taskErrors[id])}</div>` : ""}
+    ${attemptRows(id)}
+  </article>`;
+}
+
+// Put tasks into columns: a task goes one column to the right of the latest task it depends on.
+function columnsOf(plan) {
+  const column = {};
+
+  function place(task) {
+    if (column[task.id] !== undefined) return column[task.id];
+
+    let latestDependency = 0;
+    for (const dependencyId of task.depends_on) {
+      const dependency = plan.find((item) => item.id === dependencyId);
+      latestDependency = Math.max(latestDependency, place(dependency));
+    }
+    column[task.id] = latestDependency + 1;
+    return column[task.id];
+  }
+
+  for (const task of plan) place(task);
+  return column;
+}
+
+function combinerStatus() {
+  if (view.finalPassed === true) return "done";
+  if (view.finalPassed === false) return "failed";
+  if (view.modelStatus.combiner) return "running";
+  if (terminalStatuses.includes(view.status)) return "skipped";
+  return "waiting";
+}
+
+function draw() {
+  $("empty").hidden = true;
+  $("run-view").hidden = false;
+  $("run-goal").textContent = view.goal;
+  $("run-status").textContent = view.status;
+  $("run-status").className = `badge ${view.status}`;
+  const checkCount = view.feed.filter((event) => event.kind === "check").length;
+  $("run-counts").textContent = `${view.toolCalls} tool calls, ${checkCount} checks`;
+  $("run-error").hidden = !view.error;
+  $("run-error").textContent = view.error ? `Run stopped: ${view.error}` : "";
+  $("run-connection").hidden = !view.connectionError;
+  $("run-connection").textContent = view.connectionError;
+
+  const finishedRun = terminalStatuses.includes(view.status);
+  let plannerStatus = "running";
+  if (view.plan.length) plannerStatus = "done";
+  else if (view.status === "failed") plannerStatus = "failed";
+
+  const columns = [[taskCard("planner", "Plan the work", "planner", plannerStatus)]];
+  if (view.plan.length) {
+    const columnOf = columnsOf(view.plan);
+    const columnCount = Math.max(...Object.values(columnOf));
+    for (let number = 1; number <= columnCount; number++) {
+      const cards = [];
+      for (const task of view.plan) {
+        if (columnOf[task.id] !== number) continue;
+        const note = task.depends_on.length ? `, uses ${task.depends_on.join(" and ")}` : "";
+        const status = view.taskStatus[task.id] || "waiting";
+        cards.push(taskCard(task.id, task.title, task.role, status, note));
+      }
+      columns.push(cards);
+    }
+    columns.push([taskCard("combiner", "Combine the results", "combiner", combinerStatus())]);
+  }
+  $("pipeline").innerHTML = columns.map((cards) => `<div class="column">${cards.join("")}</div>`).join("");
+
+  const feed = $("feed");
+  feed.innerHTML = view.feed.map((e) => `<li><span class="muted">${escape(e.who)}</span><span>${describe(e)}</span></li>`).join("");
+  feed.scrollTop = feed.scrollHeight;
+
+  if (view.result) {
+    $("result").innerHTML = markdown(view.result);
+  } else if (finishedRun) {
+    $("result").innerHTML = '<p class="muted">This run ended without a final result.</p>';
+  }
+}
+
+function describe(event) {
+  if (event.kind === "tool_call") {
+    const input = JSON.stringify(event.input).slice(0, 120);
+    return `<span class="tool">${escape(event.tool)}</span> <span class="muted">${escape(input)}</span>`;
+  }
+  if (event.kind === "check") {
+    const statusClass = event.passed ? "ok" : "bad";
+    const statusText = event.passed ? "passed" : "failed";
+    const problem = (event.problems[0] || "").slice(0, 140);
+    return `Attempt ${event.attempt}: ${escape(event.check)} <span class="${statusClass}">${statusText}</span> <span class="muted">${escape(problem)}</span>`;
+  }
+  if (event.kind === "task_status") {
+    const reason = event.reason ? `: <span class="bad">${escape(event.reason)}</span>` : "";
+    return `Task ${escape(event.task)} is <b>${escape(event.status)}</b>${reason}`;
+  }
+  if (event.kind === "model_status") {
+    const messages = {
+      waiting: "Waiting for model response…",
+      done: "Model responded.",
+      failed: "Model request failed.",
+    };
+    const message = event.detail || messages[event.status] || event.status;
+    const elapsed = event.seconds != null ? ` <span class="muted">(${escape(event.seconds)}s)</span>` : "";
+    return escape(message) + elapsed;
+  }
+  const reason = event.reason ? `: <span class="bad">${escape(event.reason)}</span>` : "";
+  return `Run is <b>${escape(event.status)}</b>${reason}`;
+}
+
+// A very small markdown renderer: headings, bullet lists, code blocks, bold, inline code.
+function markdown(text) {
+  const blocks = [];
+  // Save code first, so headings and bold markers inside code stay untouched.
+  let html = escape(text).replace(/```[^\n]*\n([\s\S]*?)```/g, (_, code) => {
+    const index = blocks.length;
+    blocks.push(code);
+    return `\n@@${index}@@\n`;
+  });
+  html = html.split("\n").map((line) => {
+    if (/^@@\d+@@$/.test(line)) return line;
+    if (line.startsWith("### ")) return `<h3>${line.slice(4)}</h3>`;
+    if (line.startsWith("## ")) return `<h3>${line.slice(3)}</h3>`;
+    if (line.startsWith("# ")) return `<h2>${line.slice(2)}</h2>`;
+    if (line.startsWith("- ")) return `<li>${line.slice(2)}</li>`;
+    return line.trim() ? `<p>${line}</p>` : "";
+  }).join("\n");
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, (items) => `<ul>${items}</ul>`);   // group bullet lines into a list
+  html = html.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  html = html.replace(/`([^`]+)`/g, "<code>$1</code>");
+  return html.replace(/@@(\d+)@@/g, (_, index) => `<pre><code>${blocks[index]}</code></pre>`);
+}
+
+// ---------------------------------------------------------------- runs list + starting a run
+async function loadRuns() {
+  const list = await api("/api/runs").catch(() => []);
+  $("no-runs").hidden = list.length > 0;
+  const rows = [];
+  for (const run of list) {
+    const selected = run.run_id === currentRun ? "selected" : "";
+    rows.push(`<li><button data-id="${run.run_id}" class="${selected}">
+    <span class="goal-text">${escape(run.goal)}</span><span class="badge ${run.status}">${run.status}</span> <span class="small">${run.run_id}</span></button></li>`);
+  }
+  $("run-list").innerHTML = rows.join("");
+}
+$("run-list").addEventListener("click", (event) => {
+  const button = event.target.closest("button");
+  if (button) openRun(button.dataset.id);
+});
+
+$("goal-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const goal = $("goal").value.trim();
+  if (goal.length < 5) return $("goal").focus();
+  $("start").disabled = true;
+  const { run_id } = await api("/api/runs", { method: "POST", body: JSON.stringify({ goal }) });
+  $("start").disabled = false;
+  openRun(run_id);
+});
+$("example").addEventListener("click", () => {
+  $("goal").value = "Build a slugify() utility that follows our URL style guide, with tests and a usage note.";
+});
+
+// ---------------------------------------------------------------- the tabs at the bottom
+document.querySelector(".tabs").addEventListener("click", (event) => {
+  const tab = event.target.dataset.tab;
+  if (!tab) return;
+  for (const button of document.querySelectorAll(".tabs button")) {
+    button.classList.toggle("on", button.dataset.tab === tab);
+  }
+  for (const name of ["routines", "channels", "tools"]) {
+    $(`tab-${name}`).hidden = name !== tab;
+  }
+  const loaders = { routines: loadRoutines, channels: loadMessages, tools: loadTools };
+  loaders[tab]();
+});
+
+function scheduleText(schedule) {
+  if (!schedule) return "manual only";
+  if (schedule.every_minutes) return `every ${schedule.every_minutes} minutes`;
+  const days = (schedule.days || ["every day"]).join(", ");
+  return `${days} at ${schedule.daily_at} (${schedule.timezone || "UTC"})`;
+}
+
+const routineResults = {};
+
+function routineSteps(lastRun) {
+  if (!lastRun) return "";
+
+  let stamps = "";
+  for (const step of lastRun.steps) {
+    let status = "wait";
+    if (step.status === "ok") status = "pass";
+    else if (step.status === "failed") status = "fail";
+    stamps += `<span class="stamp ${status}" title="${escape(step.error || "")}">${escape(step.id)}</span>`;
+  }
+  return `<div class="stamps" style="margin-top: .35rem">${stamps}</div>`;
+}
+
+async function loadRoutines() {
+  const list = await api("/api/routines").catch(() => []);
+  const rows = [];
+  for (const routine of list) {
+    const lastRun = routineResults[routine.name];
+    const nextRun = routine.next_run ? new Date(routine.next_run).toLocaleString() : "–";
+    const buttonText = lastRun?.status === "running" ? "Running…" : "Run now";
+    rows.push(`<tr><td><b>${escape(routine.name)}</b><div class="small">${escape(routine.description)}</div>${routineSteps(lastRun)}</td>
+      <td>${escape(scheduleText(routine.schedule))}</td><td>${nextRun}</td>
+      <td><button class="button light" data-routine="${routine.name}">${buttonText}</button></td></tr>`);
+  }
+  $("tab-routines").innerHTML = `<table><tr><th>Routine</th><th>Runs</th><th>Next run</th><th></th></tr>${rows.join("")}</table>`;
+}
+$("tab-routines").addEventListener("click", async (event) => {
+  const name = event.target.dataset.routine;
+  if (!name) return;
+  const { run_id } = await api(`/api/routines/${name}/run`, { method: "POST" });
+  routineResults[name] = { status: "running", steps: [] };
+  loadRoutines();
+  const checkStatus = async () => {
+    routineResults[name] = await api(`/api/routine-runs/${run_id}`);
+    loadRoutines();
+    if (routineResults[name].status === "running") setTimeout(checkStatus, 500);
+  };
+  setTimeout(checkStatus, 300);
+});
+
+async function loadMessages() {
+  const channel = $("channel").value;
+  const data = await api(`/api/channels/${channel}`).catch(() => ({ messages: [] }));
+  if (!data.messages.length) {
+    $("messages").innerHTML = `<p class="muted">Nothing on ${channel} yet. Routines and failed tasks post here.</p>`;
+    return;
+  }
+
+  const rows = [];
+  for (const message of data.messages.slice().reverse()) {
+    const time = new Date(message.time * 1000).toLocaleString();
+    rows.push(`<div class="message"><b>${escape(message.sender)}</b> <span class="small">${time}</span><pre>${escape(message.text)}</pre></div>`);
+  }
+  $("messages").innerHTML = rows.join("");
+}
+$("channel").addEventListener("change", loadMessages);
+
+async function loadTools() {
+  const tools = await api("/api/tools").catch(() => []);
+  const rows = [];
+  for (const tool of tools) {
+    const description = tool.description.split("\n")[0];
+    rows.push(`<tr><td><b>${escape(tool.name)}</b></td><td class="muted">${escape(description)}</td></tr>`);
+  }
+  $("tab-tools").innerHTML = `<table><tr><th>Tool</th><th>What it does</th></tr>${rows.join("")}</table>`;
+}
+
+// ---------------------------------------------------------------- start up
+api("/api/health").then((health) => {
+  $("facts").innerHTML = `Model <b>${escape(health.model)}</b> &nbsp; MCP servers <b>${health.servers.join(", ")}</b> &nbsp; <b>${health.tools}</b> tools`;
+}).catch(() => {
+  $("facts").textContent = "Can't reach the server. Is `python main.py serve` running?";
+});
+loadRuns();
+loadRoutines();
+setInterval(loadRuns, 3000);
+if (location.hash) openRun(location.hash.slice(1));
+</script>
+</body>
+</html>

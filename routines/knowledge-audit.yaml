@@ -1,0 +1,30 @@
+name: knowledge-audit
+description: Every weekday morning, a writer agent checks the document library and posts a report.
+schedule:
+  daily_at: "08:41"
+  days: [mon, tue, wed, thu, fri]
+  timezone: Asia/Kolkata
+inputs:
+  channel: reports
+
+steps:
+  - id: inventory
+    tool: knowledge__list_documents
+
+  - id: audit
+    agent: writer
+    prompt: |
+      Write a short audit of our knowledge base. Mention every document,
+      flag any under 80 words as short, and cite each one as [doc:<id>].
+      INVENTORY: {{steps.inventory.output}}
+    checks: [citations, length]
+    max_words: 220
+
+  - id: publish
+    only_if: "{{steps.audit.passed}}"
+    tool: blackboard__post_message
+    args:
+      channel: "{{inputs.channel}}"
+      sender: knowledge-audit
+      text: "{{steps.audit.output}}"
+    retries: 2

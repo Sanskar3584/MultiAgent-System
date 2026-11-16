@@ -1,0 +1,26 @@
+name: weekly-self-test
+description: Every Tuesday, the whole team rebuilds slugify() from scratch, and a check confirms the result is complete.
+schedule:
+  daily_at: "10:17"
+  days: [tue]
+  timezone: Asia/Kolkata
+
+steps:
+  - id: build
+    goal: Build a slugify() utility that follows our URL style guide, with tests and a usage note.
+
+  - id: gate
+    tool: validator__check_length
+    must_pass: true
+    args:
+      text: "{{steps.build.output}}"
+      max_words: 5000
+      min_words: 100
+      must_include: ["def slugify", "def test_", "[doc:style-guide]"]
+
+  - id: report
+    tool: blackboard__post_message
+    args:
+      channel: reports
+      sender: weekly-self-test
+      text: "Weekly self-test passed. The team rebuilt slugify() and every check passed."

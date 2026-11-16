@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+*.json.tmp
+.venv/
+.env
+.env.*
+!.env.example

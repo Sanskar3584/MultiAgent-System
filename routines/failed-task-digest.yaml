@@ -1,0 +1,18 @@
+name: failed-task-digest
+description: Every 15 minutes, look for tasks that failed their checks and tell a human. Only tool calls, no AI.
+schedule:
+  every_minutes: 15
+
+steps:
+  - id: failed
+    tool: blackboard__list_tasks
+    args:
+      status: failed
+
+  - id: tell_humans
+    only_if: "{{steps.failed.data.tasks}}"
+    tool: blackboard__post_message
+    args:
+      channel: humans
+      sender: failed-task-digest
+      text: "These tasks need a human: {{steps.failed.data.tasks}}"

@@ -1,0 +1,11 @@
+mcp>=1.26,<2
+anthropic
+groq
+fastapi
+uvicorn
+pyyaml
+jsonschema
+pytest
+pytest-asyncio
+httpx
+tzdata
